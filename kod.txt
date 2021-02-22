@@ -1,0 +1,235 @@
+#include <LiquidCrystal_I2C.h>    //biblioteka wyświetlacza LCD
+#include "math.h"                 //biblioteka zawierajaca operacje matemateczyne takie jak arctg
+int stan_przycisku = 0;           //zmienna opisująca stan przycisku BUTTON
+int licznik = 1;                  //zmienna opisująca wartość licznika
+bool wlacznik = 0;                //zmienna opisująca stan włącznika POWER ON/OFF
+LiquidCrystal_I2C lcd(0x27,20,4); //przypisanie parametrów wyświetlacza LCD
+
+void  setup() {
+  Serial.begin(9600);             //ustalenie parametrów transmisji szeregowej
+  lcd.init();                     //inicjacja wyświetlacza LCD
+  lcd.backlight();                //włączenie podświetlenia wyświetlacza LCD
+  analogReference(EXTERNAL);      //ustalenie napięcia referencyjnego na zewnętrzne źródło
+  pinMode(6,INPUT);               //pin ustalony jako wejście (Przycisk POWER ON/OFF)
+  pinMode(7,INPUT);               //pin ustalony jako wejście (pin Trig czujnika HC-SR04 (1))
+  pinMode(8,OUTPUT);              //pin ustalony jako wyjście (pin Echo czujnika HC-SR04 (1))
+  pinMode(9,INPUT);               //pin ustalony jako wejście (Przycisk BUTTON)
+  pinMode(11,INPUT);              //pin ustalony jako wejście (pin Trig czujnika HC-SR04 (2))
+  pinMode(12,OUTPUT);             //pin ustalony jako wejście (pin Echo czujnika HC-SR04 (2))
+  pinMode(13,OUTPUT);             //pin ustalony jako wyjście (dioda LED)
+  pinMode(A0,INPUT);              //pin ustalony jako wejście (czujnik temperatury TMP36)
+}
+void loop() {
+//sprawdzenie czy został wcisniety przycisk POWER ON/OFF  
+if(digitalRead (6) == 1){         
+wlacznik =!wlacznik;
+while(digitalRead(6) == 1);
+licznik = 1;
+}
+if(wlacznik == 0)                 //przycisk POWER ON/OFF w stanie OFF
+{
+  delay(50);
+}
+else{                               //przycisk POWER ON/OFF w stanie On
+unsigned long czasStart = millis(); //rozpoczecie liczenia czasu pojedynczej serii pomiarow
+double predkosc_dzwieku = 340.3;    //ustalenie wartosci predkosci rozchodzenia sie dzwieku na 340.3 m/s
+int zakres_pomiarowy = 30;          //Ustalenie wartości zakresu pomiarowego
+int tmp = zmierzTemperature();      //odczyt temperatury z czujnika
+double odl1;
+double odl2;
+double roznica_temp = abs(tmp - 15);//obliczenie o ile rozni sie temperatura od 15*C
+//uwzględnienie temperatury prrzy wartosci predkosci rozchodzenia sie dzwieku
+if (tmp >= 15){
+  predkosc_dzwieku = predkosc_dzwieku + (roznica_temp*0.6);
+}
+else{
+  predkosc_dzwieku = predkosc_dzwieku - (roznica_temp*0.6);
+}
+stan_przycisku = digitalRead(9);    //odczyt stanu przycisku BUTTON
+//sprawdzenie czy został wcisniety przycisk BUTTON
+if ( stan_przycisku == 1){
+  while(digitalRead(9) == 1);
+  if(licznik < 5) 
+  {
+    licznik++;
+    lcd.clear();
+  }
+  else licznik =1;
+    }
+Serial.write(0);                    //znak rozpoczynajacy transmisje szeregowa
+switch(licznik){
+  case 1: //pomiar odleglosci lewym czujnikiem
+  Serial.println("Tryb 1 - pomiar odleglosci lewym czujnikiem");
+   odl1 = zmierzOdleglosc()*(predkosc_dzwieku / 20000);
+    if (odl1 < zakres_pomiarowy){
+     digitalWrite(13,LOW);
+    Serial.print("Temperatura: ");
+    Serial.print(tmp);
+    Serial.println("*C ");
+    Serial.print("Odleglosc: ");
+    Serial.print(odl1,1);
+    Serial.println("cm ");
+    lcd.setCursor(0,0);
+    lcd.print("Tryb1");
+    lcd.setCursor(8,0);
+    lcd.print("Temp ");
+    lcd.print(tmp);
+    lcd.setCursor(0,1);
+    lcd.print("Odl1 ");
+    lcd.print(odl1,1);
+    lcd.print("cm");
+    }
+    else
+    {
+      Serial.println("POZA ZAKRESEM");
+      lcd.setCursor(0,1);
+      lcd.print("POZA ZAKRESEM");
+      digitalWrite(13,HIGH);
+    }
+    break;
+    case 2: //pomiar odleglosci prawym czujnikiem
+    Serial.println("Tryb 2 - pomiar odleglosci prawym czujnikiem");
+    odl2 = zmierzOdleglosc2()*(predkosc_dzwieku / 20000);
+    if (odl2 < zakres_pomiarowy){
+    digitalWrite(13,LOW);
+    Serial.print("Temperatura: ");
+    Serial.print(tmp);
+    Serial.print("*C ");
+    Serial.print("Odleglosc: ");
+    Serial.print(odl2,1);
+    Serial.println("cm ");
+    lcd.setCursor(0,0);
+    lcd.print("Tryb2");
+    lcd.setCursor(8,0);
+    lcd.print("Temp ");
+    lcd.print(tmp);
+    lcd.setCursor(0,1);
+    lcd.print("Odl2 ");
+    lcd.print(odl2,1);
+    lcd.print("cm");
+    }
+    else
+    {
+      Serial.println("POZA ZAKRESEM");
+
+      lcd.setCursor(0,1);
+      lcd.print("POZA ZAKRESEM");
+      digitalWrite(13,HIGH);
+    }
+    break;
+     case 3://pomiar odleglosci dwoma czujnikami
+    Serial.println("Tryb 3 - Pomiar odleglosci dwoma czujnikami ");
+    odl1 = zmierzOdleglosc()*(predkosc_dzwieku / 20000);
+      delay (100);
+      odl2 = zmierzOdleglosc2()*(predkosc_dzwieku / 20000);
+    if ( odl1 > zakres_pomiarowy || odl2 > zakres_pomiarowy)
+    {
+      Serial.println("POZA ZAKRESEM");
+     
+      lcd.setCursor(0,1);
+      lcd.print("POZA ZAKRESEM");
+      digitalWrite(13,HIGH);
+    }
+    else{
+      digitalWrite(13,LOW);
+      Serial.print("Temperatura: ");
+      Serial.print(tmp);
+      Serial.print("*C ");
+      Serial.print("Odleglosc zmierzona lewym czujnikiem: ");
+      Serial.print(odl1,1);
+      Serial.println("cm ");
+      Serial.print("Odleglosc zmierzona prawym czujnikiem: ");
+      Serial.print(odl2,1);
+      Serial.println("cm ");
+      lcd.setCursor(0,0);
+    lcd.print("Tryb3");
+    lcd.setCursor(8,0);
+    lcd.print("Temp ");
+    lcd.print(tmp);
+    lcd.setCursor(0,1);
+    lcd.print("O1 ");
+    lcd.print(odl1,1);
+    lcd.setCursor(8,1);
+    lcd.print("O2 ");
+    lcd.print(odl2,1);
+    }
+    break;
+    case 4://Pomiar kata nachylenia przeszkody
+    Serial.println("Tryb 4 - Pomiar kata nachylenia przeszkody ");
+    odl1 = zmierzOdleglosc()*(predkosc_dzwieku / 20000);
+      delay (100);
+    odl2 = zmierzOdleglosc2()*(predkosc_dzwieku / 20000);
+    if ( odl1 > zakres_pomiarowy || odl2 > zakres_pomiarowy)
+    {
+      Serial.println("POZA ZAKRESEM");
+     
+      lcd.setCursor(0,1);
+      lcd.print("POZA ZAKRESEM");
+      digitalWrite(13,HIGH);
+    }
+    else{
+      double kat = zmierzKat(odl1,odl2);
+      digitalWrite(13,LOW);
+      Serial.print("Temperatura: ");
+      Serial.print(tmp);
+      Serial.print("*C ");
+      Serial.print("Kat nachylenia: ");
+      Serial.print(kat);
+      Serial.println("* ");
+      lcd.setCursor(0,0);
+      lcd.print("Tryb4");
+    lcd.setCursor(8,0);
+    lcd.print("Temp ");
+    lcd.print(tmp);
+    lcd.setCursor(0,1);
+    lcd.print("Kat ");
+    lcd.print(kat);
+    }
+    break;
+}
+unsigned long czasStop = millis();        //koniec pomiaru czasu
+unsigned long Czas = czasStop - czasStart;//obliczenie czasu trwania serii pomiarów
+Serial.print("Czas: ");
+Serial.print(Czas);
+Serial.println("ms");
+Serial.write(4);
+
+}
+}
+//funkcja opisujaca poomiar odleglosci za pomoca czujnika HC-SR04(1)
+long zmierzOdleglosc(){
+  long czas, dystans;
+  digitalWrite(8,LOW);
+  delayMicroseconds(2);
+  digitalWrite(8,HIGH);
+  delayMicroseconds(10);
+  digitalWrite(8,LOW);
+  czas = pulseIn(7,HIGH);
+  return czas; 
+}
+//funkcja opisujaca poomiar odleglosci za pomoca czujnika HC-SR04(2)
+long zmierzOdleglosc2(){
+  long czas2, dystans2;
+  digitalWrite(12,LOW);
+  delayMicroseconds(2);
+  digitalWrite(12,HIGH);
+  delayMicroseconds(10);
+  digitalWrite(12,LOW);
+  czas2 = pulseIn(11,HIGH);
+  return czas2; 
+}
+//funkcja opisujaca poomiar kata nachylenia przeszkody
+long zmierzKat(long a, long b){
+  int odstep = 15;
+  double dif = abs (a - b);
+  double x = atan (dif / odstep);
+  double KAT = (x*180) / 3.14159;
+  return KAT;
+}
+//funkcja opisujaca poomiar temperatury
+long zmierzTemperature(){
+  int odczyt = analogRead(A0);     
+  float VOLT = (odczyt * 1.27) / 1024.0;
+  float TEMP = (VOLT - 0.5) * 100;
+  return TEMP;
+}
